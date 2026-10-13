@@ -57,10 +57,18 @@
 
 ---
 
+## ADR-007: Python 3.12 Runtime & Docker Base Image Standardization
+- **Context**: Evaluating Python 3.12 vs. 3.13 for deployment and Docker containerization.
+- **Decision**: Standardize on **Python 3.12-slim** across both local development and the production Docker image.
+- **Rationale**:
+  1. **Dev-to-Prod Parity (12-Factor App Factor X)**: Local development and testing are pinned to Python 3.12.15; matching the container runtime avoids subtle bytecode or runtime drift.
+  2. **Pre-compiled Binary Wheels**: PDF parsing engines (like `pdfminer.six` and `pypdfium2` underneath `pdfplumber`) provide stable, pre-compiled C-extension binary wheels for Python 3.12. Python 3.13 requires source compilation on several platforms, substantially increasing Docker build times and image sizes.
+
+---
+
 ## Project Milestones & Progress Tracker
 - [x] **Milestone 1: Spec & Project Foundations** (`SPEC.md`, `DECISIONS.md`, Python 3.12 environment, Pydantic data contracts, test suite).
 - [x] **Milestone 2: Tier-1 Ingestion Strategy** (`BaseStatementParser`, `CSVStatementParser`, unit tests).
 - [x] **Milestone 3: SQLite Storage & FastMCP Server** (`raw_statements`, `transactions`, `merchant_memory`, FastMCP tools).
 - [x] **Milestone 4: PDF Extraction & LangGraph Reflection Loop** (`pdfplumber`, balance reconciliation, circuit breaker).
-- [x] **Milestone 5: Adaptive Memory & Deduplication Engine** (Cache lookup, Qwen 2.5 7B LLM classification, hash deduplication, self-learning loop).
-- [ ] **Milestone 6: FastAPI REST API, CLI, Docker Packaging, & Documentation**.
+- [x] **Milestone 6: FastAPI REST API, CLI, Docker Packaging, & Documentation** (FastAPI routes, CLI runner, Dockerfile, docker-compose, README.md, ADR-007).

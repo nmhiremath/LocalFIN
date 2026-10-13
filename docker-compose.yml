@@ -1,0 +1,20 @@
+services:
+  localfin-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: localfin-api
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_DISPLAY_NAME=LocalFin
+      - LOCALFIN_DATA_DIR=/app/data
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=qwen2.5:7b
+    volumes:
+      # Persist SQLite ledger and merchant memory outside the container
+      - ./data:/app/data
+    extra_hosts:
+      # Enables Linux, Mac, and Windows containers to resolve host machine's Ollama
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

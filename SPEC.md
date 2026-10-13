@@ -110,3 +110,10 @@ A standalone FastMCP server (`src/mcp/server.py`) exposing standard tools:
 ### 6. Verification & Evals
 * **Unit Tests**: 100% offline tests using `MockLLM` fixture.
 * **Deterministic Evals**: Benchmark against synthetic Chase, Discover, Citi, and RocketMoney statements to guarantee 0% math hallucination.
+
+---
+
+### 7. Runtime Environment & Container Packaging
+* **Python Runtime**: Pinned to **Python 3.12** (`python:3.12-slim` base image) for strict dev-to-prod parity.
+* **C-Extension Wheels**: Standardized on 3.12 to leverage stable pre-compiled wheels for binary PDF engines (`pypdfium2`, `pdfminer.six`).
+* **Container Bridge**: Docker container bridges to host-level Ollama via `host.docker.internal:11434` for zero-egress LLM inference.
