@@ -1,0 +1,17 @@
+# Core Web & API
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+
+# Agentic Orchestration & LLM
+langgraph>=0.2.35
+langchain-core>=0.3.15
+langchain-ollama>=0.2.0
+
+# Document Extraction & Data Validation
+pdfplumber>=0.11.4
+pydantic>=2.9.2
+sqlmodel>=0.0.22
+
+# Model Context Protocol (MCP)
+mcp>=1.1.0
