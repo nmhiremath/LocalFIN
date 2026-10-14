@@ -8,8 +8,9 @@ transaction queries, spending analytics, and tag management.
 from pathlib import Path
 import shutil
 import tempfile
-from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, UploadFile, File, Query, HTTPException, status
+import uuid
+from typing import List, Optional, Dict, Any, Tuple
+from fastapi import FastAPI, UploadFile, File, Query, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel
 
 from src.config import APP_DISPLAY_NAME, APP_DESCRIPTION
@@ -23,6 +24,9 @@ app = FastAPI(title=APP_DISPLAY_NAME, description=APP_DESCRIPTION, version="1.0.
 db = DatabaseManager()
 graph = build_financial_statement_graph()
 
+# In-memory job registry for asynchronous batch tasks
+jobs_db: Dict[str, Dict[str, Any]] = {}
+
 
 class IngestResponse(BaseModel):
     filename: str
@@ -35,34 +39,56 @@ class IngestResponse(BaseModel):
     errors: List[str] = []
 
 
+class BatchIngestResponse(BaseModel):
+    total_files: int
+    reconciled_files: int
+    flagged_files: int
+    total_transactions: int
+    results: List[IngestResponse]
+
+
+class BatchJobCreatedResponse(BaseModel):
+    job_id: str
+    status: str
+    total_files: int
+    message: str
+
+
+class BatchJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    total_files: int
+    processed_files: int
+    result: Optional[BatchIngestResponse] = None
+    error: Optional[str] = None
+
+
 class RenameTagRequest(BaseModel):
     old_tag: str
     new_tag: str
 
 
-@app.get("/health", tags=["System"])
-def health_check() -> Dict[str, str]:
-    """Liveness probe for health and container monitoring."""
-    return {"status": "healthy", "app": APP_DISPLAY_NAME}
-
-
-@app.post("/api/statements/ingest", response_model=IngestResponse, tags=["Statements"])
-def ingest_statement(file: UploadFile = File(...)) -> IngestResponse:
-    """
-    Ingests a bank/credit card PDF statement or CSV export.
-    Executes the deterministic LangGraph pipeline: Ingest -> Extract -> Reconcile -> Enrich -> Persist.
-    """
+def _process_single_statement(file: UploadFile) -> IngestResponse:
+    """Helper to execute the LangGraph pipeline for a single statement upload."""
     if not file.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No filename provided.")
+        return IngestResponse(
+            filename="unknown",
+            status="error",
+            total_transactions=0,
+            reflection_attempts=0,
+            errors=["No filename provided."],
+        )
 
     suffix = Path(file.filename).suffix.lower()
     if suffix not in [".pdf", ".csv"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported format '{suffix}'. Only .pdf and .csv are supported.",
+        return IngestResponse(
+            filename=file.filename,
+            status="error",
+            total_transactions=0,
+            reflection_attempts=0,
+            errors=[f"Unsupported format '{suffix}'. Only .pdf and .csv are supported."],
         )
 
-    # Save to a temporary file for zero-egress processing
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
         tmp_path = Path(tmp_file.name)
         shutil.copyfileobj(file.file, tmp_file)
@@ -96,9 +122,175 @@ def ingest_statement(file: UploadFile = File(...)) -> IngestResponse:
             errors=result.get("errors", []),
         )
     finally:
-        # Cleanup temporary file
         if tmp_path.exists():
             tmp_path.unlink()
+
+
+def _run_batch_ingest_job(job_id: str, file_records: List[Tuple[str, Path]]) -> None:
+    """
+    Background worker task executing LangGraph pipeline across batch files.
+    file_records contains tuples of (original_filename, temp_path).
+    """
+    jobs_db[job_id]["status"] = "in_progress"
+    results: List[IngestResponse] = []
+    reconciled_count = 0
+    flagged_count = 0
+    total_txs = 0
+
+    try:
+        for filename, tmp_path in file_records:
+            try:
+                initial_state = {
+                    "file_path": str(tmp_path),
+                    "raw_content": "",
+                    "summary": None,
+                    "transactions": [],
+                    "reconciliation_result": None,
+                    "reflection_attempts": 0,
+                    "status": "in_progress",
+                    "errors": [],
+                }
+                res_graph = graph.invoke(initial_state)
+                summary = res_graph.get("summary")
+                recon = res_graph.get("reconciliation_result") or {}
+                txs = res_graph.get("transactions", [])
+                st = res_graph.get("status", "unknown")
+
+                ingest_res = IngestResponse(
+                    filename=filename,
+                    status=st,
+                    total_transactions=len(txs),
+                    stated_ending_balance=summary.stated_ending_balance if summary else None,
+                    calculated_ending_balance=recon.get("calculated_ending_balance"),
+                    delta=recon.get("delta"),
+                    reflection_attempts=res_graph.get("reflection_attempts", 0),
+                    errors=res_graph.get("errors", []),
+                )
+            except Exception as e:
+                ingest_res = IngestResponse(
+                    filename=filename,
+                    status="error",
+                    total_transactions=0,
+                    reflection_attempts=0,
+                    errors=[str(e)],
+                )
+
+            results.append(ingest_res)
+            if ingest_res.status == "completed":
+                reconciled_count += 1
+            elif ingest_res.status in ["flagged", "error"]:
+                flagged_count += 1
+            total_txs += ingest_res.total_transactions
+            jobs_db[job_id]["processed_files"] += 1
+
+        batch_res = BatchIngestResponse(
+            total_files=len(file_records),
+            reconciled_files=reconciled_count,
+            flagged_files=flagged_count,
+            total_transactions=total_txs,
+            results=results,
+        )
+        jobs_db[job_id]["status"] = "completed"
+        jobs_db[job_id]["result"] = batch_res
+    except Exception as ex:
+        jobs_db[job_id]["status"] = "failed"
+        jobs_db[job_id]["error"] = str(ex)
+    finally:
+        for _, tmp_path in file_records:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+
+@app.get("/health", tags=["System"])
+def health_check() -> Dict[str, str]:
+    """Liveness probe for health and container monitoring."""
+    return {"status": "healthy", "app": APP_DISPLAY_NAME}
+
+
+@app.post("/api/statements/ingest", response_model=IngestResponse, tags=["Statements"])
+def ingest_statement(file: UploadFile = File(...)) -> IngestResponse:
+    """
+    Ingests a single bank/credit card PDF statement or CSV export.
+    Executes the deterministic LangGraph pipeline: Ingest -> Extract -> Reconcile -> Enrich -> Persist.
+    """
+    res = _process_single_statement(file)
+    if res.status == "error":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=res.errors[0] if res.errors else "Ingestion failed.",
+        )
+    return res
+
+
+@app.post(
+    "/api/statements/ingest-batch",
+    response_model=BatchJobCreatedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Statements"],
+)
+def ingest_batch(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+) -> BatchJobCreatedResponse:
+    """
+    Asynchronously ingests a batch of statements (PDF or CSV) in one multipart request.
+    Returns HTTP 202 with a job_id for decoupled polling.
+    """
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one statement file must be provided.",
+        )
+
+    job_id = str(uuid.uuid4())
+    file_records: List[Tuple[str, Path]] = []
+
+    # Persist uploads to temp files synchronously before returning HTTP 202
+    for file in files:
+        filename = file.filename or "unknown"
+        suffix = Path(filename).suffix.lower() or ".tmp"
+        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_file.close()
+        file_records.append((filename, Path(tmp_file.name)))
+
+    jobs_db[job_id] = {
+        "job_id": job_id,
+        "status": "pending",
+        "total_files": len(files),
+        "processed_files": 0,
+        "result": None,
+        "error": None,
+    }
+
+    background_tasks.add_task(_run_batch_ingest_job, job_id, file_records)
+
+    return BatchJobCreatedResponse(
+        job_id=job_id,
+        status="pending",
+        total_files=len(files),
+        message="Batch ingestion job scheduled. Poll /api/jobs/{job_id} for progress.",
+    )
+
+
+@app.get("/api/jobs/{job_id}", response_model=BatchJobStatusResponse, tags=["Jobs"])
+def get_job_status(job_id: str) -> BatchJobStatusResponse:
+    """Checks the progress and results of an asynchronous batch ingestion job."""
+    job = jobs_db.get(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found.",
+        )
+
+    return BatchJobStatusResponse(
+        job_id=job["job_id"],
+        status=job["status"],
+        total_files=job["total_files"],
+        processed_files=job["processed_files"],
+        result=job.get("result"),
+        error=job.get("error"),
+    )
 
 
 @app.get("/api/transactions", response_model=List[Transaction], tags=["Transactions"])

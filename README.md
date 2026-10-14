@@ -110,11 +110,30 @@ uvicorn src.api.main:app --reload --port 8000
 Interactive OpenAPI documentation will be live at `http://localhost:8000/docs`.
 
 #### Core Endpoints:
-* `POST /api/statements/ingest`: Upload PDF or CSV to trigger the LangGraph reflection pipeline.
+* `POST /api/statements/ingest`: Upload a single PDF or CSV to trigger the LangGraph reflection pipeline.
+* `POST /api/statements/ingest-batch`: Asynchronously ingest multiple PDF/CSV statements. Returns HTTP `202 Accepted` with a `job_id`.
+* `GET /api/jobs/{job_id}`: Poll progress (`pending`, `in_progress`, `completed`, `failed`) and view aggregated reconciliation metrics for a batch job.
 * `GET /api/transactions`: Query stored transactions with date, category, and tag filters.
 * `GET /api/spending/summary`: Aggregated expenses grouped by financial category.
 * `GET /api/spending/by-tag`: Total spend calculation for a specific tag.
 * `POST /api/tags/rename`: Atomic tag rename across all linked records.
+
+#### Asynchronous Batch Ingestion Workflow (cURL):
+```bash
+# 1. Submit batch of statements (Returns HTTP 202 + job_id)
+curl -X POST "http://localhost:8000/api/statements/ingest-batch" \
+  -F "files=@january_statement.csv" \
+  -F "files=@february_statement.pdf"
+
+# Response:
+# {"job_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","status":"pending","total_files":2,"message":"Batch ingestion job scheduled. Poll /api/jobs/{job_id} for progress."}
+
+# 2. Poll job status until completed
+curl "http://localhost:8000/api/jobs/3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+# Response:
+# {"job_id":"3fa85f64...","status":"completed","total_files":2,"processed_files":2,"result":{"total_files":2,"reconciled_files":2,"flagged_files":0,"total_transactions":58,"results":[...]}}
+```
 
 ---
 

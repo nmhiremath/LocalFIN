@@ -22,17 +22,8 @@ def format_currency(amount: float) -> str:
     return f"${amount:,.2f}"
 
 
-def handle_ingest(args):
-    """Executes the LangGraph ingestion and reconciliation pipeline for a statement file."""
-    file_path = Path(args.file)
-    if not file_path.exists():
-        print(f"Error: File '{file_path}' does not exist.", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"\n[{APP_DISPLAY_NAME}] Ingesting statement: {file_path.name}")
-    print("=" * 60)
-
-    graph = build_financial_statement_graph()
+def _ingest_single_file(file_path: Path, graph) -> dict:
+    """Invokes the LangGraph pipeline for a single statement."""
     initial_state = {
         "file_path": str(file_path),
         "raw_content": "",
@@ -43,43 +34,77 @@ def handle_ingest(args):
         "status": "in_progress",
         "errors": [],
     }
+    return graph.invoke(initial_state)
 
-    result = graph.invoke(initial_state)
 
-    status = result.get("status", "unknown")
-    txs = result.get("transactions", [])
-    summary = result.get("summary")
-    recon = result.get("reconciliation_result") or {}
-    reflection_attempts = result.get("reflection_attempts", 0)
+def handle_ingest(args):
+    """Executes ingestion for a single statement file or an entire directory of statements."""
+    target_path = Path(args.file)
+    if not target_path.exists():
+        print(f"Error: Path '{target_path}' does not exist.", file=sys.stderr)
+        sys.exit(1)
 
-    print(f"Status:               {status.upper()}")
-    print(f"Total Transactions:   {len(txs)}")
-    print(f"Reflection Attempts:  {reflection_attempts}")
+    graph = build_financial_statement_graph()
 
-    if summary:
-        stated = summary.stated_ending_balance
-        calc = recon.get("calculated_ending_balance", 0.0)
-        delta = recon.get("delta", 0.0)
-        print(f"Stated Ending Bal:    {format_currency(stated)}")
-        print(f"Calculated Ending:    {format_currency(calc)}")
-        print(f"Discrepancy (Delta):  {format_currency(delta)}")
-
-    if result.get("errors"):
-        print("\nWarnings/Errors:")
-        for err in result["errors"]:
-            print(f" - {err}")
-
-    print("\nSample Line Items:")
-    print(f"{'Date':<12} | {'Merchant':<25} | {'Category':<15} | {'Amount':>10}")
-    print("-" * 68)
-    for tx in txs[:10]:
+    # Discover files: directory or single file
+    if target_path.is_dir():
+        statement_files = sorted(
+            [p for p in target_path.iterdir() if p.suffix.lower() in [".pdf", ".csv"]]
+        )
+        if not statement_files:
+            print(f"No .pdf or .csv statements found in directory: {target_path}")
+            return
         print(
-            f"{tx.date:<12} | {tx.clean_merchant[:25]:<25} | {tx.category[:15]:<15} | {format_currency(tx.amount):>10}"
+            f"\n[{APP_DISPLAY_NAME}] Batch Ingesting {len(statement_files)} statements from: {target_path}"
+        )
+    else:
+        statement_files = [target_path]
+        print(f"\n[{APP_DISPLAY_NAME}] Ingesting statement: {target_path.name}")
+
+    print("=" * 70)
+    total_txs_all = 0
+    reconciled_count = 0
+    human_review_count = 0
+
+    for idx, fpath in enumerate(statement_files, 1):
+        result = _ingest_single_file(fpath, graph)
+        status = result.get("status", "unknown")
+        txs = result.get("transactions", [])
+        recon = result.get("reconciliation_result") or {}
+        delta = recon.get("delta", 0.0)
+        attempts = result.get("reflection_attempts", 0)
+
+        total_txs_all += len(txs)
+        if status == "reconciled":
+            reconciled_count += 1
+        else:
+            human_review_count += 1
+
+        delta_str = f"Delta: {format_currency(delta)}" if delta != 0 else "Balanced (Δ=$0.00)"
+        attempts_str = (
+            f"(healed in {attempts} retries)" if attempts > 0 and status == "reconciled" else ""
+        )
+        print(
+            f"[{idx}/{len(statement_files)}] {fpath.name:<28} | {status.upper():<14} | {len(txs):>3} txs | {delta_str} {attempts_str}"
         )
 
-    if len(txs) > 10:
-        print(f"... and {len(txs) - 10} more transactions.")
-    print("=" * 60)
+        if len(statement_files) == 1 and txs:
+            print("\nSample Line Items:")
+            print(f"{'Date':<12} | {'Merchant':<25} | {'Category':<15} | {'Amount':>10}")
+            print("-" * 68)
+            for tx in txs[:10]:
+                print(
+                    f"{tx.date:<12} | {tx.clean_merchant[:25]:<25} | {tx.category[:15]:<15} | {format_currency(tx.amount):>10}"
+                )
+            if len(txs) > 10:
+                print(f"... and {len(txs) - 10} more transactions.")
+
+    print("=" * 70)
+    if len(statement_files) > 1:
+        print(
+            f"Batch Summary: {len(statement_files)} files | {reconciled_count} reconciled | {human_review_count} flagged | {total_txs_all} total transactions"
+        )
+        print("=" * 70)
 
 
 def handle_summary(args):

@@ -69,3 +69,43 @@ def test_rename_tag_endpoint():
         "/api/tags/rename", json={"old_tag": "nonexistent_tag_xyz", "new_tag": "some_other_tag"}
     )
     assert resp_404.status_code == 404
+
+
+def test_ingest_batch_job_and_polling():
+    csv_1 = (
+        "Date,Description,Amount,Category\n"
+        "2026-01-01,STORE A,-50.00,Shopping\n"
+        "2026-01-02,STORE B,-25.00,Dining\n"
+    ).encode("utf-8")
+
+    csv_2 = ("Date,Description,Amount,Category\n2026-02-01,GAS STATION,-40.00,Transport\n").encode(
+        "utf-8"
+    )
+
+    # Send multipart files list to ingest-batch
+    files = [
+        ("files", ("batch_jan.csv", io.BytesIO(csv_1), "text/csv")),
+        ("files", ("batch_feb.csv", io.BytesIO(csv_2), "text/csv")),
+    ]
+
+    response = client.post("/api/statements/ingest-batch", files=files)
+    assert response.status_code == 202
+    data = response.json()
+    assert "job_id" in data
+    assert data["total_files"] == 2
+    job_id = data["job_id"]
+
+    # Poll status endpoint
+    status_resp = client.get(f"/api/jobs/{job_id}")
+    assert status_resp.status_code == 200
+    status_data = status_resp.json()
+    assert status_data["job_id"] == job_id
+    assert status_data["total_files"] == 2
+    assert status_data["status"] == "completed"
+    assert status_data["processed_files"] == 2
+    assert status_data["result"] is not None
+    assert status_data["result"]["total_transactions"] == 3
+
+    # Polling a nonexistent job returns 404
+    missing_resp = client.get("/api/jobs/nonexistent-job-uuid-12345")
+    assert missing_resp.status_code == 404
