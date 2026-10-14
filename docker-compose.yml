@@ -1,5 +1,8 @@
+name: localfin
+
 services:
   localfin-api:
+    image: localfin:latest
     build:
       context: .
       dockerfile: Dockerfile
