@@ -136,7 +136,7 @@ class DatabaseManager:
             return False
 
     def get_spending_by_tag(self, tag_name: str) -> float:
-        """Calculates total spend for a tag using a type-safe SQLModel join."""
+        """Calculates total spend for a tag using a type-safe SQLModel join, excluding transfers."""
         with Session(self.engine, expire_on_commit=False) as session:
             statement = (
                 select(func.sum(Transaction.amount))
@@ -144,6 +144,7 @@ class DatabaseManager:
                 .join(Tag)
                 .where(func.lower(Tag.name) == tag_name.strip().lower())
                 .where(Transaction.amount < 0)
+                .where(func.lower(Transaction.category) != "transfer")
             )
             total = session.exec(statement).first() or 0.0
             return round(abs(total), 2)
@@ -220,11 +221,12 @@ class DatabaseManager:
             session.commit()
 
     def get_spending_summary(self) -> Dict[str, float]:
-        """Calculates total expense spend grouped by category."""
+        """Calculates total expense spend grouped by category, excluding inter-account transfers."""
         with Session(self.engine, expire_on_commit=False) as session:
             statement = (
                 select(Transaction.category, func.sum(Transaction.amount))
                 .where(Transaction.amount < 0)
+                .where(func.lower(Transaction.category) != "transfer")
                 .group_by(Transaction.category)
             )
             results = session.exec(statement).all()
