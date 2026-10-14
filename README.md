@@ -1,16 +1,23 @@
-# LocalFin
+# LocalFin: Local-First Financial Statement & Transaction Intelligence Agent
 
-**Local-first financial intelligence engine with zero cloud egress.**
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2.35-orange.svg)](https://langchain-ai.github.io/langgraph/)
+[![SQLModel](https://img.shields.io/badge/SQLModel-0.0.22-green.svg)](https://sqlmodel.tiangolo.com/)
+[![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Tests: Pytest](https://img.shields.io/badge/tests-25%20passed-brightgreen.svg)](https://docs.pytest.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-LocalFin ingests bank statements (PDFs and CSVs), reconciles ledger balances using self-healing agentic reflection loops, and enriches unstructured merchant strings using a **4-tier adaptive intelligence ladder** combining declarative open rules, fast SQLite cache memory, and an on-device Qwen 2.5 7B LLM.
+**LocalFin** is a privacy-first, zero-egress financial intelligence system. It automates the extraction, schema validation, and balance reconciliation of digital bank statements (PDFs) and credit card exports (CSVs) using a deterministic **LangGraph reflection state machine**, on-device local LLMs (**Qwen 2.5 7B via Ollama**), and a unified **SQLModel relational ledger** with Model Context Protocol (**MCP**) integration.
 
 ---
 
-## Key Highlights
+## Key Architectural Highlights
 
-* **100% Zero-Cloud Egress**: All PDF parsing, OCR, categorization, and balance reconciliation execute strictly on your local machine. No financial transactions, balances, or credentials ever leave your device.
-* **Self-Healing Agentic Reconciliation**: Built with **LangGraph**. Compares extracted transaction totals against statement summary ground truths ($Starting + Deposits - Debits = Ending$). Automatically reflects, adjusts tolerances, and retries discrepancies before persistence.
-* **Accounting Sign & Date Normalization**:
+* **Zero-Egress Privacy Boundary**: Financial transactions, account numbers, and personal identity data never leave your local machine. All parsing, validation, and AI enrichment execute strictly on-device.
+* **Deterministic Reconciliation Invariant**: Eliminates LLM math hallucinations. Extracted line items are balanced against starting/ending statement totals ($Ending = Starting + Credits + Debits$) using strict Python floating-point math.
+* **Automated Self-Healing Reflection Loop**: If a reconciliation discrepancy exists, LangGraph evaluates ambiguous line-item candidates (e.g. sign-inverted debits/credits) and heals them within a 2-retry circuit breaker.
+* **Credit Card & Accounting Sign Normalization**:
   * Normalizes credit card statements to standard double-entry ledger conventions (expenses negative, debt payments positive).
   * Auto-detects institution (Chase, Discover, Citi), account type (Credit Card vs. Checking), card number masks (`****1713`), and prepends statement year to generate ISO dates (`YYYY-MM-DD`).
 * **4-Tier Adaptive Intelligence Engine**:
@@ -28,7 +35,7 @@ LocalFin ingests bank statements (PDFs and CSVs), reconciles ledger balances usi
 ```mermaid
 flowchart TD
     A[Statement PDF / CSV] --> B[Ingest Node: pdfplumber / CSV Parser]
-    B --> C[Extract Summary Node: Ground Truth Balance]
+    B --> C[Extract Summary Node: Page 1 Ground Truth]
     C --> D[Reconcile Node: Deterministic Math Check]
     D -->|Discrepancy: Delta != 0| E[Reflect & Correct Node]
     E -->|Max 2 Retries| D
@@ -119,6 +126,23 @@ Interactive OpenAPI documentation will be live at `http://localhost:8000/docs`.
 * `GET /api/spending/summary`: Aggregated expenses grouped by financial category (excludes inter-account transfers).
 * `GET /api/spending/by-tag`: Total spend calculation for a specific tag.
 * `POST /api/tags/rename`: Atomic tag rename across all linked records.
+
+#### Asynchronous Batch Ingestion Workflow (cURL):
+```bash
+# 1. Submit batch of statements (Returns HTTP 202 + job_id)
+curl -X POST "http://localhost:8000/api/statements/ingest-batch" \
+  -F "files=@january_statement.csv" \
+  -F "files=@february_statement.pdf"
+
+# Response:
+# {"job_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","status":"pending","total_files":2,"message":"Batch ingestion job scheduled. Poll /api/jobs/{job_id} for progress."}
+
+# 2. Poll job status until completed
+curl "http://localhost:8000/api/jobs/3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+# Response:
+# {"job_id":"3fa85f64...","status":"completed","total_files":2,"processed_files":2,"result":{"total_files":2,"reconciled_files":2,"flagged_files":0,"total_transactions":58,"results":[...]}}
+```
 
 ---
 
