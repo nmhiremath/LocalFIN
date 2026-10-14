@@ -6,15 +6,39 @@ from src.parsers.base import BaseStatementParser
 
 
 class CSVStatementParser(BaseStatementParser):
-    """Tier 1 non-destructive parser for tabular CSV exports."""
+    """Tier 1 non-destructive parser for tabular CSV exports with automated credit card sign normalization."""
 
     def can_parse(self, file_path: Path) -> bool:
         return file_path.suffix.lower() == ".csv"
 
+    @staticmethod
+    def _detect_institution(filename: str) -> str:
+        fn = filename.lower()
+        if "discover" in fn:
+            return "Discover"
+        elif "chase" in fn:
+            return "Chase"
+        elif "apple" in fn:
+            return "Apple Card"
+        elif "citi" in fn:
+            return "Citi"
+        elif "rocket" in fn:
+            return "RocketMoney"
+        return "Generic CSV"
+
+    @staticmethod
+    def _detect_account_type(filename: str, field_map: dict) -> AccountType:
+        fn = filename.lower()
+        if any(w in fn for w in ["card", "discover", "credit", "amex"]):
+            return AccountType.CREDIT_CARD
+        if any(k in field_map for k in ["trans. date", "post date"]):
+            return AccountType.CREDIT_CARD
+        if "rocket" in fn:
+            return AccountType.AGGREGATOR
+        return AccountType.CHECKING
+
     def parse(self, file_path: Path) -> Tuple[str, List[Transaction]]:
         transactions: List[Transaction] = []
-        institution = "RocketMoney" if "rocket" in file_path.name.lower() else "Generic CSV"
-
         raw_csv_text = file_path.read_text(encoding="utf-8-sig")
         lines = raw_csv_text.splitlines()
         if not lines:
@@ -25,6 +49,8 @@ class CSVStatementParser(BaseStatementParser):
             return raw_csv_text, []
 
         field_map = {name.lower().strip(): name for name in reader.fieldnames}
+        institution = self._detect_institution(file_path.name)
+        account_type = self._detect_account_type(file_path.name, field_map)
 
         # Identify core columns
         date_col = next((field_map[k] for k in field_map if "date" in k or "time" in k), None)
@@ -56,6 +82,27 @@ class CSVStatementParser(BaseStatementParser):
             if amt_col and row.get(amt_col):
                 cleaned_amt = row[amt_col].replace("$", "").replace(",", "").strip()
                 amount = float(cleaned_amt) if cleaned_amt else 0.0
+
+                # Credit card sign normalization for single-amount columns
+                if account_type == AccountType.CREDIT_CARD:
+                    desc_lower = raw_desc.lower()
+                    is_payment = any(
+                        w in desc_lower
+                        for w in [
+                            "payment",
+                            "thank you",
+                            "autopay",
+                            "credit",
+                            "refund",
+                            "cashback",
+                            "reward",
+                        ]
+                    )
+                    if is_payment or amount < 0:
+                        amount = abs(amount)  # Card balance credit (+)
+                    else:
+                        amount = -abs(amount)  # Card purchase expense (-)
+
             elif debit_col or credit_col:
                 debit_val = (
                     float(row[debit_col].replace("$", "").replace(",", "").strip() or 0.0)
@@ -69,7 +116,6 @@ class CSVStatementParser(BaseStatementParser):
                 )
                 amount = credit_val - debit_val
 
-            # Preserve all extra columns into raw_metadata for downstream enrichment
             extra_metadata = {
                 k: v
                 for k, v in row.items()
@@ -83,9 +129,7 @@ class CSVStatementParser(BaseStatementParser):
                     clean_merchant=raw_desc.strip(),
                     amount=amount,
                     institution=institution,
-                    account_type=AccountType.AGGREGATOR
-                    if "rocket" in institution.lower()
-                    else AccountType.CHECKING,
+                    account_type=account_type,
                     raw_metadata=extra_metadata,
                 )
             )
