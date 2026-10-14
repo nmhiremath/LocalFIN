@@ -22,8 +22,9 @@ class PDFPlumberStatementParser(BaseStatementParser):
                 text = page.extract_text() or ""
                 raw_pages.append(text)
 
-                # Extract table structures
+                # Strategy 1: Tabular extraction (for PDFs with vector gridlines)
                 tables = page.extract_tables()
+                page_txs: List[Transaction] = []
                 for table in tables:
                     for row in table:
                         if not row or len(row) < 3:
@@ -32,30 +33,23 @@ class PDFPlumberStatementParser(BaseStatementParser):
                         cleaned_row = [str(c).strip() if c else "" for c in row]
                         row_str = " ".join(cleaned_row)
 
-                        # Skip header lines
                         if any(
                             h in row_str.lower()
                             for h in ["date", "description", "balance", "amount"]
                         ):
                             continue
 
-                        # Detect Date column (MM/DD/YYYY, YYYY-MM-DD, MM/DD)
                         date_match = re.search(
                             r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}(?:/\d{2,4})?)\b", row_str
                         )
-                        if not date_match:
-                            continue
-
-                        # Detect Dollar Amount
                         amt_match = re.search(r"(-?\$?\s*[0-9,]+\.[0-9]{2})", row_str)
-                        if not amt_match:
+                        if not date_match or not amt_match:
                             continue
 
                         date_val = date_match.group(0)
                         amt_raw = amt_match.group(1).replace("$", "").replace(",", "").strip()
                         amount_val = float(amt_raw)
 
-                        # Longest non-numeric text is the raw description
                         desc_candidates = [
                             c
                             for c in cleaned_row
@@ -63,7 +57,7 @@ class PDFPlumberStatementParser(BaseStatementParser):
                         ]
                         raw_desc = desc_candidates[0] if desc_candidates else row_str
 
-                        transactions.append(
+                        page_txs.append(
                             Transaction(
                                 date=date_val,
                                 raw_description=raw_desc,
@@ -74,6 +68,82 @@ class PDFPlumberStatementParser(BaseStatementParser):
                                 raw_metadata={"page": page_idx + 1, "raw_cells": cleaned_row},
                             )
                         )
+
+                # Strategy 2: Line-stream fallback (for borderless text-column bank PDFs)
+                if not page_txs and text:
+                    for line in text.splitlines():
+                        line_str = line.strip()
+                        if len(line_str) < 10:
+                            continue
+
+                        # Skip header and summary lines
+                        lower_line = line_str.lower()
+                        if any(
+                            s in lower_line
+                            for s in [
+                                "beginning balance",
+                                "ending balance",
+                                "starting balance",
+                                "total credits",
+                                "total debits",
+                                "account summary",
+                                "page ",
+                                "date description",
+                            ]
+                        ):
+                            continue
+
+                        # Detect date near start of line
+                        date_match = re.search(
+                            r"^(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}(?:/\d{2,4})?|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2}(?:, \d{4})?)\b",
+                            line_str,
+                            re.IGNORECASE,
+                        ) or re.search(
+                            r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}(?:/\d{2,4})?)\b",
+                            line_str[:20],
+                        )
+                        if not date_match:
+                            continue
+
+                        # Detect dollar amounts
+                        amt_matches = list(re.finditer(r"(-?\$?\s*[0-9,]+\.[0-9]{2})", line_str))
+                        if not amt_matches:
+                            continue
+
+                        # Transaction amount is typically the first or second numeric column
+                        target_amt_match = amt_matches[0]
+                        amt_raw = (
+                            target_amt_match.group(1).replace("$", "").replace(",", "").strip()
+                        )
+                        try:
+                            amount_val = float(amt_raw)
+                        except ValueError:
+                            continue
+
+                        # Extract description text between date and amount
+                        start_idx = date_match.end()
+                        end_idx = target_amt_match.start()
+                        if end_idx > start_idx:
+                            raw_desc = line_str[start_idx:end_idx].strip()
+                        else:
+                            raw_desc = line_str[:end_idx].strip()
+
+                        if len(raw_desc) < 2:
+                            continue
+
+                        page_txs.append(
+                            Transaction(
+                                date=date_match.group(0),
+                                raw_description=raw_desc,
+                                clean_merchant=raw_desc.strip(),
+                                amount=amount_val,
+                                institution="Bank PDF",
+                                account_type=AccountType.CHECKING,
+                                raw_metadata={"page": page_idx + 1, "raw_line": line_str},
+                            )
+                        )
+
+                transactions.extend(page_txs)
 
         full_raw_text = "\n--- PAGE BREAK ---\n".join(raw_pages)
         return full_raw_text, transactions

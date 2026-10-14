@@ -11,6 +11,7 @@ import tempfile
 import uuid
 from typing import List, Optional, Dict, Any, Tuple
 from fastapi import FastAPI, UploadFile, File, Query, HTTPException, status, BackgroundTasks
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 
 from src.config import APP_DISPLAY_NAME, APP_DESCRIPTION
@@ -26,6 +27,32 @@ graph = build_financial_statement_graph()
 
 # In-memory job registry for asynchronous batch tasks
 jobs_db: Dict[str, Dict[str, Any]] = {}
+
+
+def custom_openapi() -> Dict[str, Any]:
+    """Customizes OpenAPI schema to ensure Swagger UI renders native multi-file upload button."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Swagger UI requires OpenAPI 3.0.x compatibility to render array-of-files upload inputs
+    openapi_schema["openapi"] = "3.0.3"
+    schemas = openapi_schema.get("components", {}).get("schemas", {})
+    for schema_name, schema in schemas.items():
+        if "ingest_batch" in schema_name and "properties" in schema:
+            files_prop = schema["properties"].get("files")
+            if files_prop and "items" in files_prop:
+                files_prop["items"]["format"] = "binary"
+                files_prop["items"]["type"] = "string"
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi  # type: ignore[method-assign]
 
 
 class IngestResponse(BaseModel):
