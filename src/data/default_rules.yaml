@@ -9,7 +9,7 @@ rules:
   category: Transfer
   subcategory: P2P Debit
   is_transfer: true
-- pattern: (?i)(?:AUTOMATIC\s+PAYMENT\s*-\s*THANK\s+YOU|CHASE\s+CREDIT\s+CRD\s+AUTOPAY|DISCOVER\s+E-?PAYMENT|CITI\s+AUTOPAY\s+PAYMENT|CAPITAL\s+ONE\s+AUTOPAY|AMEX\s+EPAYMENT)
+- pattern: (?i)(?:AUTOMATIC\s+PAYMENT\s*-\s*THANK\s+YOU|CHASE\s+CREDIT\s+CRD\s+(?:AUTOPAY|EPAY)|DISCOVER\s+E-?PAYMENT|CITI\s+AUTOPAY\s+PAYMENT|CAPITAL\s+ONE\s+AUTOPAY|AMEX\s+EPAYMENT)
   merchant: Credit Card Payment
   category: Transfer
   subcategory: Credit Card Payoff
