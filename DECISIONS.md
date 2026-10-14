@@ -66,9 +66,35 @@
 
 ---
 
+---
+
+## ADR-008: Tier 0 Declarative Rules Engine & P2P Cache-Poisoning Prevention
+- **Context**:
+  1. Generic P2P rail transactions (Zelle, Venmo) caused "cache poisoning" in Tier 1 SQLite memory when the first payee encountered was saved as a static pattern (e.g. mapping all subsequent Zelle payments to that single person).
+  2. Common corporate cafeterias and dining vendors (e.g., `ARAMARK CAPITAL ONE`) were misclassified by the LLM as financial banking institutions rather than food services.
+- **Decision**:
+  1. Introduce **Tier 0 Declarative Rules Engine** executed before the SQLite cache and LLM ladder.
+  2. Ship an open fintech baseline rule set in [`src/data/default_rules.yaml`](src/data/default_rules.yaml) (covering 100+ patterns across corporate dining, P2P rails, streaming, supermarkets, and credit card autopayments), with support for user override rules in `rules.yaml`.
+  3. Dynamic regex capture groups extract individual counterparties on-the-fly (`Zelle (Counterparty Name)`).
+  4. Bar generic P2P transfer strings from ever being persisted into Tier 3 `MerchantMemory`, eliminating cache poisoning permanently.
+
+---
+
+## ADR-009: Credit Card Accounting Normalization & Transfer Analytics Exclusion
+- **Context**:
+  1. Credit card issuers (Discover, Chase, Amex) export expenses as positive charges (debt additions) and payments as negative credits, conflicting with checking accounts and standard double-entry accounting.
+  2. Inter-account debt payoffs (e.g., paying a Chase credit card from a Chase checking account) appeared as expenses, leading to double-counting in spending analytics.
+- **Decision**:
+  1. Enforce strict **double-entry sign conventions** in both PDF and CSV parsers based on `AccountType.CREDIT_CARD`: charges are normalized to negative expenses, while payments are normalized to positive balance credits.
+  2. Synthesize ISO dates (`YYYY-MM-DD`) by detecting statement period years on statements lacking 4-digit years.
+  3. Automatically categorize credit card debt payoffs and inter-account transfers as `Transfer`, and explicitly exclude the `Transfer` category from spending summary queries in [`src/mcp/db.py`](src/mcp/db.py).
+
+---
+
 ## Project Milestones & Progress Tracker
 - [x] **Milestone 1: Spec & Project Foundations** (`SPEC.md`, `DECISIONS.md`, Python 3.12 environment, Pydantic data contracts, test suite).
 - [x] **Milestone 2: Tier-1 Ingestion Strategy** (`BaseStatementParser`, `CSVStatementParser`, unit tests).
 - [x] **Milestone 3: SQLite Storage & FastMCP Server** (`raw_statements`, `transactions`, `merchant_memory`, FastMCP tools).
 - [x] **Milestone 4: PDF Extraction & LangGraph Reflection Loop** (`pdfplumber`, balance reconciliation, circuit breaker).
 - [x] **Milestone 6: FastAPI REST API, CLI, Docker Packaging, & Documentation** (FastAPI routes, CLI runner, Dockerfile, docker-compose, README.md, ADR-007).
+- [x] **Milestone 7: 4-Tier Declarative Engine & Credit Card Accounting Normalization** (Tier 0 YAML rules, Zelle dynamic regex, credit card sign normalization, transfer analytics exclusion, test isolation).
