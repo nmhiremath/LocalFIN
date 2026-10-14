@@ -44,7 +44,7 @@ def ingest_node(state: AgentState) -> AgentStateUpdate:
 
 def extract_summary_node(state: AgentState) -> AgentStateUpdate:
     """Extracts ground truth StatementSummary from Page 1 raw content if PDF."""
-    raw_content = state.get("raw_content", "")
+    raw_content = state.get("raw_content") or ""
     file_path = state.get("file_path", "")
 
     # CSV files have no statement header
@@ -166,7 +166,7 @@ def persist_node(state: AgentState) -> AgentStateUpdate:
     """Persists statement and transactions to SQLite database."""
     summary = state.get("summary")
     txs = state.get("transactions", [])
-    raw_content = state.get("raw_content", "")
+    raw_content = state.get("raw_content") or ""
     file_path = state.get("file_path", "unknown")
 
     stmt_id = None

@@ -1,3 +1,4 @@
+from typing import Any, cast
 from langgraph.graph import StateGraph, START, END
 from src.graph.state import AgentState
 from src.graph.nodes import (
@@ -30,7 +31,7 @@ def route_reconciliation(state: AgentState) -> str:
 
 def build_financial_statement_graph():
     """Compiles the multi-stage document extraction & reconciliation LangGraph."""
-    graph = StateGraph(AgentState)
+    graph = StateGraph(cast(Any, AgentState))
 
     # Register Nodes
     graph.add_node("ingest", ingest_node)

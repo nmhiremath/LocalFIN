@@ -1,9 +1,9 @@
 import re
 from pathlib import Path
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 import pdfplumber
 
-from src.models.schemas import Transaction, StatementSummary, AccountType
+from src.models.schemas import Transaction, AccountType
 from src.parsers.base import BaseStatementParser
 
 
@@ -13,7 +13,7 @@ class PDFPlumberStatementParser(BaseStatementParser):
     def can_parse(self, file_path: Path) -> bool:
         return file_path.suffix.lower() == ".pdf"
 
-    def parse(self, file_path: Path) -> Tuple[Optional[StatementSummary], List[Transaction]]:
+    def parse(self, file_path: Path) -> Tuple[str, List[Transaction]]:
         transactions: List[Transaction] = []
         raw_pages: List[str] = []
 
