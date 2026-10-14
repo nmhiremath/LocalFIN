@@ -176,9 +176,9 @@ def _run_batch_ingest_job(job_id: str, file_records: List[Tuple[str, Path]]) -> 
                 )
 
             results.append(ingest_res)
-            if ingest_res.status == "completed":
+            if ingest_res.status in ["reconciled", "completed"]:
                 reconciled_count += 1
-            elif ingest_res.status in ["flagged", "error"]:
+            elif ingest_res.status in ["needs_human_review", "flagged", "error", "failed"]:
                 flagged_count += 1
             total_txs += ingest_res.total_transactions
             jobs_db[job_id]["processed_files"] += 1
