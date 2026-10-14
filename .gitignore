@@ -31,7 +31,7 @@ venv.bak/
 # Local data & SQLite databases
 *.db
 *.sqlite3
-data/
+/data/
 uploads/
 statements/
 

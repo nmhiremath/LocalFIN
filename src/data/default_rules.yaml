@@ -1,0 +1,189 @@
+rules:
+- pattern: (?i)Zelle\s+Payment\s+From\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,2})(?:\s+[A-Za-z0-9]{10,}|\s+\d{6,}|\s*$)
+  merchant: Zelle Transfer
+  category: Transfer
+  subcategory: P2P Credit
+  is_transfer: true
+- pattern: (?i)Zelle\s+Payment\s+To\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,2})(?:\s+[A-Za-z0-9]{10,}|\s+\d{6,}|\s*$)
+  merchant: Zelle Transfer
+  category: Transfer
+  subcategory: P2P Debit
+  is_transfer: true
+- pattern: (?i)(?:AUTOMATIC\s+PAYMENT\s*-\s*THANK\s+YOU|CHASE\s+CREDIT\s+CRD\s+AUTOPAY|DISCOVER\s+E-?PAYMENT|CITI\s+AUTOPAY\s+PAYMENT|CAPITAL\s+ONE\s+AUTOPAY|AMEX\s+EPAYMENT)
+  merchant: Credit Card Payment
+  category: Transfer
+  subcategory: Credit Card Payoff
+  is_transfer: true
+- pattern: (?i)(?:WEALTHFRONT|FIDELITY|VANGUARD|ROBINHOOD|SCHWAB|COINBASE)
+  merchant: Investment Transfer
+  category: Transfer
+  subcategory: Investment
+  is_transfer: true
+- pattern: (?i)(?:BILT\s+PAYMENT|BILT\s*RENT)
+  merchant: Bilt Rent
+  category: Housing
+  subcategory: Rent
+- pattern: (?i)(?:PAYROLL|COMPUNNEL.*PAYROLL|DIRECT\s+DEP|ADP\s+PAYROLL|PAYCHEX)
+  merchant: Payroll Deposit
+  category: Income
+  subcategory: Salary
+- pattern: (?i)\bARAMARK\b
+  merchant: Aramark Dining
+  category: Food and Beverage
+  subcategory: Corporate Cafeteria
+- pattern: (?i)\bSODEXO\b
+  merchant: Sodexo
+  category: Food and Beverage
+  subcategory: Corporate Cafeteria
+- pattern: (?i)\bCOMPASS\s+GROUP\b
+  merchant: Compass Group Dining
+  category: Food and Beverage
+  subcategory: Corporate Cafeteria
+- pattern: (?i)INDIA\s+BAZAAR
+  merchant: India Bazaar
+  category: Groceries
+  subcategory: Ethnic Supermarket
+- pattern: (?i)PATEL\s+BROTHERS
+  merchant: Patel Brothers
+  category: Groceries
+  subcategory: Ethnic Supermarket
+- pattern: (?i)WHOLE\s*FOODS
+  merchant: Whole Foods Market
+  category: Groceries
+  subcategory: Supermarket
+- pattern: (?i)TRADER\s*JOE
+  merchant: Trader Joe's
+  category: Groceries
+  subcategory: Supermarket
+- pattern: (?i)COSTCO\s*(?:WHSE|GAS)?
+  merchant: Costco Wholesale
+  category: Groceries
+  subcategory: Wholesale Club
+- pattern: (?i)\bTARGET\b
+  merchant: Target
+  category: Retail
+  subcategory: Department Store
+- pattern: (?i)\bWAL-?MART\b
+  merchant: Walmart
+  category: Retail
+  subcategory: Supercenter
+- pattern: (?i)STARBUCKS
+  merchant: Starbucks
+  category: Food and Beverage
+  subcategory: Coffee Shop
+- pattern: (?i)BLUE\s+BOTTLE
+  merchant: Blue Bottle Coffee
+  category: Food and Beverage
+  subcategory: Coffee Shop
+- pattern: (?i)DUNKIN
+  merchant: Dunkin'
+  category: Food and Beverage
+  subcategory: Coffee & Donuts
+- pattern: (?i)CHIPOTLE
+  merchant: Chipotle Mexican Grill
+  category: Food and Beverage
+  subcategory: Fast Casual
+- pattern: (?i)WHATABURGER
+  merchant: Whataburger
+  category: Food and Beverage
+  subcategory: Fast Food
+- pattern: (?i)SWEETGREEN
+  merchant: Sweetgreen
+  category: Food and Beverage
+  subcategory: Fast Casual
+- pattern: (?i)VELVET\s+TACO
+  merchant: Velvet Taco
+  category: Food and Beverage
+  subcategory: Fast Casual
+- pattern: (?i)EINSTEIN\s+BROS
+  merchant: Einstein Bros. Bagels
+  category: Food and Beverage
+  subcategory: Bagel Shop
+- pattern: (?i)EGG\s+POSH\s+CAFE
+  merchant: Egg Posh Cafe
+  category: Food and Beverage
+  subcategory: Breakfast Cafe
+- pattern: (?i)STARSHIP\s+BAGEL
+  merchant: Starship Bagel
+  category: Food and Beverage
+  subcategory: Bagel Shop
+- pattern: (?i)SHUGS
+  merchant: Shug's Bagels
+  category: Food and Beverage
+  subcategory: Bagel Shop
+- pattern: (?i)BUBBLEOLOGY
+  merchant: Bubbleology
+  category: Food and Beverage
+  subcategory: Bubble Tea
+- pattern: (?i)RHYTHM\s+ENERGY
+  merchant: Rhythm Energy
+  category: Utilities
+  subcategory: Electricity
+- pattern: (?i)CON\s*EDISON
+  merchant: Con Edison
+  category: Utilities
+  subcategory: Electricity
+- pattern: (?i)FRONTIER\s+(?:SEC|COMM|INTERNET)
+  merchant: Frontier Communications
+  category: Utilities
+  subcategory: Internet & Telecom
+- pattern: (?i)VERIZON
+  merchant: Verizon Wireless
+  category: Utilities
+  subcategory: Cellular & Telecom
+- pattern: (?i)AT&T|ATT\*BILL
+  merchant: AT&T
+  category: Utilities
+  subcategory: Cellular & Telecom
+- pattern: (?i)T-?MOBILE
+  merchant: T-Mobile
+  category: Utilities
+  subcategory: Cellular & Telecom
+- pattern: (?i)LEMONADE\s+INSURANCE
+  merchant: Lemonade Insurance
+  category: Insurance
+  subcategory: Renters & Home Insurance
+- pattern: (?i)(?:AMAZON\s+PRIME|AMZN.*PRIME)
+  merchant: Amazon Prime
+  category: Subscription
+  subcategory: Membership
+- pattern: (?i)(?:PRIME\s+VIDEO)
+  merchant: Prime Video
+  category: Entertainment
+  subcategory: Streaming Video
+- pattern: (?i)(?:AMAZON\s+MKTPL|AMZN\.COM/BILL|AMAZON\.COM)
+  merchant: Amazon
+  category: Online Shopping
+  subcategory: E-Commerce
+- pattern: (?i)NETFLIX
+  merchant: Netflix
+  category: Entertainment
+  subcategory: Streaming Video
+- pattern: (?i)SPOTIFY
+  merchant: Spotify
+  category: Entertainment
+  subcategory: Streaming Music
+- pattern: (?i)GOOGLE\s*\*?GOOGLE\s+ONE
+  merchant: Google One
+  category: Subscription
+  subcategory: Cloud Storage
+- pattern: (?i)APPLE\.COM/BILL|APPLE\.COM
+  merchant: Apple Services
+  category: Subscription
+  subcategory: Digital Media
+- pattern: (?i)PATREON
+  merchant: Patreon
+  category: Subscription
+  subcategory: Creator Support
+- pattern: (?i)CVS(?:/PHARMACY)?
+  merchant: CVS Pharmacy
+  category: Health & Medical
+  subcategory: Pharmacy
+- pattern: (?i)SUPERCUTS
+  merchant: Supercuts
+  category: Personal Care
+  subcategory: Hair Salon
+- pattern: (?i)UBER\s*\*?TRIP
+  merchant: Uber
+  category: Transportation
+  subcategory: Rideshare

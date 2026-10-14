@@ -56,22 +56,22 @@ def test_tier_3_autonomous_learning_loop(tmp_path: Path):
     # First transaction: Not in memory, enriched via heuristic or LLM
     tx1 = Transaction(
         date="2026-03-20",
-        raw_description="CHECKCARD TRADER JOES #512",
-        clean_merchant="TRADER JOES",
+        raw_description="CHECKCARD BOUTIQUE GROCERY #512",
+        clean_merchant="BOUTIQUE GROCERY",
         amount=-42.50,
     )
 
     enriched1 = engine.enrich_transaction(tx1, enable_llm=False)
     assert enriched1.category == "Groceries"
     # Verify Tier 3 automatically saved pattern to SQLite
-    learned = db.lookup_merchant_memory("CHECKCARD TRADER JOES #512")
+    learned = db.lookup_merchant_memory("CHECKCARD BOUTIQUE GROCERY #512")
     assert learned is not None
     assert learned["clean_merchant"] == enriched1.clean_merchant
 
     # Second transaction next month: Should now hit Tier 1 cache!
     tx2 = Transaction(
         date="2026-04-20",
-        raw_description="CHECKCARD TRADER JOES #999",
+        raw_description="CHECKCARD BOUTIQUE GROCERY #999",
         clean_merchant="UNKNOWN",
         amount=-65.10,
     )
@@ -89,11 +89,53 @@ async def test_tier_2_live_qwen_ollama_extraction(tmp_path: Path):
 
     tx = Transaction(
         date="2026-03-22",
-        raw_description="STARBUCKS STORE #14929 SEATTLE WA",
-        clean_merchant="RAW_STARBUCKS",
+        raw_description="PACIFIC COFFEE ROASTERS SEATTLE WA",
+        clean_merchant="RAW_COFFEE",
         amount=-6.75,
     )
 
     enriched = engine.enrich_transaction(tx, enable_llm=True)
-    assert "starbucks" in enriched.clean_merchant.lower()
+    assert (
+        "coffee" in enriched.clean_merchant.lower() or "roasters" in enriched.clean_merchant.lower()
+    )
     assert enriched.raw_metadata["enrichment_tier"] in ["tier_2_llm", "tier_fallback_heuristic"]
+
+
+def test_tier_0_default_rules_and_zelle(tmp_path: Path):
+    db_file = tmp_path / "test_rules.db"
+    db = DatabaseManager(db_path=db_file)
+    engine = AdaptiveEnrichmentEngine(db=db)
+
+    # 1. Aramark rule check
+    tx_aramark = Transaction(
+        date="2026-06-23",
+        raw_description="ARAMARK CAPITAL ONE PLANO TX",
+        clean_merchant="UNKNOWN",
+        amount=-8.05,
+    )
+    enriched_aramark = engine.enrich_transaction(tx_aramark, enable_llm=False)
+    assert enriched_aramark.clean_merchant == "Aramark Dining"
+    assert enriched_aramark.category == "Food and Beverage"
+    assert enriched_aramark.raw_metadata["enrichment_tier"] == "tier_0_rule"
+
+    # 2. Zelle dynamic counterparty extraction
+    tx_zelle1 = Transaction(
+        date="2026-07-01",
+        raw_description="07/01 Zelle Payment From Pooja Jeergyal 29842119788",
+        clean_merchant="UNKNOWN",
+        amount=128.50,
+    )
+    enriched_zelle1 = engine.enrich_transaction(tx_zelle1, enable_llm=False)
+    assert enriched_zelle1.clean_merchant == "Zelle (Pooja Jeergyal)"
+    assert enriched_zelle1.category == "Transfer"
+    assert enriched_zelle1.raw_metadata["is_transfer"] is True
+
+    tx_zelle2 = Transaction(
+        date="2026-07-10",
+        raw_description="07/10 Zelle Payment To Akash Rb Jpm99Cozwozy",
+        clean_merchant="UNKNOWN",
+        amount=-214.43,
+    )
+    enriched_zelle2 = engine.enrich_transaction(tx_zelle2, enable_llm=False)
+    assert enriched_zelle2.clean_merchant == "Zelle (Akash Rb)"
+    assert enriched_zelle2.category == "Transfer"

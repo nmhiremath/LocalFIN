@@ -9,6 +9,8 @@ Implements the 3-Tier intelligence pattern:
 
 import re
 import json
+from pathlib import Path
+import yaml
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
@@ -80,6 +82,29 @@ class AdaptiveEnrichmentEngine:
         self.model_name = model_name
         self.base_url = base_url
         self._llm = None
+        self.rules = self._load_rules()
+
+    def _load_rules(self) -> list:
+        """Loads declarative baseline and user rules (rules.yaml)."""
+        loaded = []
+        # 1. User overrides (highest precedence)
+        user_rules_path = Path("rules.yaml")
+        if user_rules_path.exists():
+            try:
+                data = yaml.safe_load(user_rules_path.read_text(encoding="utf-8")) or {}
+                loaded.extend(data.get("rules", []))
+            except Exception:
+                pass
+
+        # 2. Curated standard baseline rules
+        default_path = Path(__file__).resolve().parent.parent / "data" / "default_rules.yaml"
+        if default_path.exists():
+            try:
+                data = yaml.safe_load(default_path.read_text(encoding="utf-8")) or {}
+                loaded.extend(data.get("rules", []))
+            except Exception:
+                pass
+        return loaded
 
     def _get_llm(self):
         """Lazy initialization of LangChain Ollama model."""
@@ -95,8 +120,38 @@ class AdaptiveEnrichmentEngine:
         return self._llm
 
     def enrich_transaction(self, tx: Transaction, enable_llm: bool = True) -> Transaction:
-        """Enriches a single transaction through the 3-Tier intelligence pipeline."""
+        """Enriches a single transaction through the 4-Tier intelligence pipeline."""
         raw_desc = tx.raw_description or ""
+
+        # Tier 0: Deterministic Rules Engine (rules.yaml & default_rules.yaml)
+        for rule in self.rules:
+            pat = rule.get("pattern", "")
+            if not pat:
+                continue
+            m = re.search(pat, raw_desc)
+            if m:
+                # Dynamic extraction for P2P transfers (e.g. Zelle)
+                counterparty = m.group(1).strip() if m.groups() and m.group(1) else ""
+                clean_name = (
+                    f"Zelle ({counterparty})"
+                    if "zelle" in pat.lower() and counterparty
+                    else rule.get("merchant", "Unknown")
+                )
+                cat = rule.get("category", "General")
+                subcat = rule.get("subcategory", "General")
+
+                tx.clean_merchant = clean_name
+                tx.category = cat
+                tx.subcategory = subcat
+                tx.confidence = 1.0
+
+                raw_meta = dict(tx.raw_metadata or {})
+                raw_meta["enrichment_tier"] = "tier_0_rule"
+                raw_meta["rule_pattern"] = pat
+                if rule.get("is_transfer"):
+                    raw_meta["is_transfer"] = True
+                tx.raw_metadata = raw_meta
+                return tx
 
         # Tier 1: Instant Memory Cache (<1ms)
         memory = self.db.lookup_merchant_memory(raw_desc)
@@ -159,8 +214,9 @@ class AdaptiveEnrichmentEngine:
         tx.raw_metadata = raw_meta
 
         # Tier 3: Auto-Learning Loop
-        # If successfully categorized with good confidence, save pattern into SQLite memory
-        if enrichment_data.confidence >= 0.8 and raw_desc.strip():
+        # Never save P2P transfer rails to merchant memory (prevents cache poisoning)
+        is_p2p = any(r in raw_desc.lower() for r in ["zelle", "venmo", "cash app", "wire transfer"])
+        if not is_p2p and enrichment_data.confidence >= 0.8 and raw_desc.strip():
             pattern = extract_pattern_prefix(raw_desc)
             try:
                 self.db.save_merchant_memory(
